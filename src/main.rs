@@ -133,6 +133,13 @@ struct Args {
     #[arg(long, help = "Use dynamic priority fees", global = true)]
     dynamic_fee: bool,
 
+    #[arg(
+        long,
+        help = "Enable logging to Google Sheets",
+        global = true
+    )]
+    logtogoogle: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -189,7 +196,7 @@ async fn main() {
             miner.config().await;
         }
         Commands::Mine(args) => {
-            miner.mine(args).await;
+            miner.mine(args, args.logtogoogle).await;
         }
         Commands::Proof(args) => {
             miner.proof(args).await;

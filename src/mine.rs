@@ -24,14 +24,25 @@ use crate::{
     Miner,
 };
 
+// Import Google Sheets API dependencies
+use google_sheets4::Sheets;
+use yup_oauth2::{ServiceAccountAuthenticator, read_service_account_key};
+
 impl Miner {
-    pub async fn mine(&self, args: MineArgs) {
+    pub async fn mine(&self, args: MineArgs, logtogoogle: bool) {
         // Open account, if needed.
         let signer = self.signer();
         self.open().await;
 
         // Check num threads
         self.check_num_cores(args.cores);
+
+        // Initialize Google Sheets API client if logging is enabled
+        let sheets_client = if logtogoogle {
+            Some(init_google_sheets_client().await.unwrap())
+        } else {
+            None
+        };
 
         // Start mining loop
         let mut last_hash_at = 0;
@@ -42,11 +53,17 @@ impl Miner {
                 get_updated_proof_with_authority(&self.rpc_client, signer.pubkey(), last_hash_at)
                     .await;
             last_hash_at = proof.last_hash_at;
-            println!(
+            let log_message = format!(
                 "\nStake: {} ORE\n  Multiplier: {:12}x",
                 amount_u64_to_string(proof.balance),
                 calculate_multiplier(proof.balance, config.top_balance)
             );
+            println!("{}", log_message);
+
+            // Log to Google Sheets if enabled
+            if let Some(client) = &sheets_client {
+                log_to_google_sheets(client, &log_message).await.unwrap();
+            }
 
             // Calculate cutoff time
             let cutoff_time = self.get_cutoff(proof, args.buffer_time).await;
@@ -232,4 +249,28 @@ impl Miner {
 
 fn calculate_multiplier(balance: u64, top_balance: u64) -> f64 {
     1.0 + (balance as f64 / top_balance as f64).min(1.0f64)
+}
+
+// Function to initialize Google Sheets API client
+async fn init_google_sheets_client() -> anyhow::Result<Sheets> {
+    let secret = read_service_account_key("path/to/credentials.json").await?;
+    let auth = ServiceAccountAuthenticator::builder(secret).build().await?;
+    let hub = Sheets::new(hyper::Client::builder().build(hyper_rustls::HttpsConnector::with_native_roots()), auth);
+    Ok(hub)
+}
+
+// Function to log messages to Google Sheets
+async fn log_to_google_sheets(client: &Sheets, log: &str) -> anyhow::Result<()> {
+    let request = google_sheets4::api::ValueRange {
+        range: "Sheet1!A1",
+        values: Some(vec![vec![log.to_string()]]),
+        ..Default::default()
+    };
+
+    client.spreadsheets().values_append(request, "spreadsheet_id", "Sheet1!A1")
+        .value_input_option("RAW")
+        .doit()
+        .await?;
+
+    Ok(())
 }

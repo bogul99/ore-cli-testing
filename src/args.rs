@@ -71,6 +71,12 @@ pub struct MineArgs {
         default_value = "5"
     )]
     pub buffer_time: u64,
+
+    #[arg(
+        long,
+        help = "Enable logging to Google Sheets"
+    )]
+    pub logtogoogle: bool,
 }
 
 #[derive(Parser, Debug)]
